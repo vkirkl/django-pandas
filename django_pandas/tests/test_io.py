@@ -2,8 +2,9 @@ from django.test import TestCase
 from django.db.models import Sum
 import pandas as pd
 import numpy as np
-from .models import MyModel, Trader, Security, TradeLog, MyModelChoice
+from .models import MyModel, Trader, Security, TradeLog, TradeLogNote, MyModelChoice, Portfolio
 from django_pandas.io import read_frame
+
 
 class IOTest(TestCase):
 
@@ -41,9 +42,10 @@ class IOTest(TestCase):
         qs = MyModel.objects.all()
         qs = qs.extra(select={"ecol1": "col1+1"})
         qs = qs.values("index_col", "ecol1", "col1")
-        qs = qs.annotate(scol1 = Sum("col1"))
+        qs = qs.annotate(scol1=Sum("col1"))
         df = read_frame(qs)
-        self.assertEqual(list(df.columns), ['index_col', 'col1', 'scol1', 'ecol1'])
+        self.assertEqual(list(df.columns),
+                         ['index_col', 'col1', 'scol1', 'ecol1'])
         self.assertEqual(list(df["col1"]), list(df["scol1"]))
 
     def test_choices(self):
@@ -82,28 +84,41 @@ class RelatedFieldsTest(TestCase):
         zyz = Security.objects.create(symbol='ZYZ', isin='999907')
         TradeLog.objects.create(trader=bob, symbol=None,
                                 log_datetime='2013-01-01T09:30:00',
-                                price=30, volume=300)
+                                price=30, volume=300,
+                                note=TradeLogNote.objects.create(note='aaa'))
         TradeLog.objects.create(trader=bob, symbol=None,
                                 log_datetime='2013-01-01T10:00:00',
-                                price=30, volume=300)
+                                price=30, volume=300,
+                                note=TradeLogNote.objects.create(note='aab'))
         TradeLog.objects.create(trader=bob, symbol=abc,
                                 log_datetime='2013-01-01T10:30:00',
-                                price=30, volume=300)
+                                price=30, volume=300,
+                                note=TradeLogNote.objects.create(note='aac'))
         TradeLog.objects.create(trader=bob, symbol=abc,
                                 log_datetime='2013-01-01T11:00:00',
-                                price=30, volume=300)
+                                price=30, volume=300,
+                                note=TradeLogNote.objects.create(note='aad'))
         TradeLog.objects.create(trader=fish, symbol=zyz,
                                 log_datetime='2013-01-01T09:30:00',
-                                price=30, volume=300)
+                                price=30, volume=300,
+                                note=TradeLogNote.objects.create(note='aae'))
         TradeLog.objects.create(trader=fish, symbol=zyz,
                                 log_datetime='2013-01-01T10:00:00',
-                                price=30, volume=300)
+                                price=30, volume=300,
+                                note=TradeLogNote.objects.create(note='aaf'))
         TradeLog.objects.create(trader=fish, symbol=zyz,
                                 log_datetime='2013-01-01T10:30:00',
-                                price=30, volume=300)
+                                price=30, volume=300,
+                                note=TradeLogNote.objects.create(note='aag'))
         TradeLog.objects.create(trader=fish, symbol=zyz,
                                 log_datetime='2013-01-01T11:00:00',
-                                price=30, volume=300)
+                                price=30, volume=300,
+                                note=TradeLogNote.objects.create(note='aah'))
+        value = Portfolio.objects.create(name="Fund 1")
+        value.securities.add(abc)
+        value.securities.add(zyz)
+        growth = Portfolio.objects.create(name="Fund 2")
+        growth.securities.add(abc)
 
     def test_verbose(self):
         qs = TradeLog.objects.all()
@@ -117,10 +132,11 @@ class RelatedFieldsTest(TestCase):
             list(qs.values_list('trader__pk', flat=True)),
             df1.trader.tolist()
         )
+
     def test_related_cols(self):
         qs = TradeLog.objects.all()
         cols = ['log_datetime', 'symbol', 'symbol__isin', 'trader__name',
-                'price', 'volume']
+                'price', 'volume', 'note__note']
         df = read_frame(qs, cols, verbose=False)
 
         self.assertEqual(df.shape, (qs.count(), len(cols)))
@@ -133,4 +149,15 @@ class RelatedFieldsTest(TestCase):
             df.trader__name.tolist()
         )
 
+    def test_many_to_many(self):
+        qs = Portfolio.objects.all()
+        cols = ['name', 'securities__symbol', 'securities__tradelog__log_datetime']
+        df = read_frame(qs, cols, verbose=True)
 
+        denormalized = Portfolio.objects.all().values_list(*cols)
+        self.assertEqual(df.shape, (len(denormalized), len(cols)))
+        for idx, row in enumerate(denormalized):
+            self.assertListEqual(
+                df.iloc[idx].tolist(),
+                list(row)
+            )

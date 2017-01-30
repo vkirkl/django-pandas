@@ -14,6 +14,21 @@ Contributors
 * `Christopher Clarke <https://github.com/chrisdev>`_
 * `Bertrand Bordage <https://github.com/BertrandBordage>`_
 * `Guillaume Thomas <https://github.com/gtnx>`_
+* `Parbhat Puri  <https://parbhatpuri.com/>`_
+* `Fredrik Burman (coachHIPPO) <https://www.coachhippo.com>`_
+* `Safe Hammad <http://safehammad.com>`_
+* `Jeff Sternber <https://www.linkedin.com/in/jeffsternberg>`_
+* `@MiddleFork <https://github.com/MiddleFork>`_
+
+What's New
+===========
+Support for Django 1.9 and removed dependency on `django-models-utils
+<https://github.com/carljm/django-model-utils>`_ even for previous versions of
+Django.
+
+The fall in Coverage in this release largely reflects the integration of
+the PassThroughManager into the code base. We'll add the required test 
+coverage for the PassThroughManager in subsequent releases.
 
 Dependencies
 =============

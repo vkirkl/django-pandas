@@ -7,10 +7,30 @@ def to_fields(qs, fieldnames):
     for fieldname in fieldnames:
         model = qs.model
         for fieldname_part in fieldname.split('__'):
-            field = model._meta.get_field(fieldname_part)
-            if field.get_internal_type() == 'ForeignKey':
-                model = field.rel.to
+            try:
+                field = model._meta.get_field(fieldname_part)
+            except django.db.models.fields.FieldDoesNotExist:
+                rels = model._meta.get_all_related_objects_with_model()
+                for relobj, _ in rels:
+                    if relobj.get_accessor_name() == fieldname_part:
+                        field = relobj.field
+                        model = field.model
+                        break
+            else:
+                if (hasattr(field, "one_to_many") and field.one_to_many) or \
+                   (hasattr(field, "one_to_one") and field.one_to_one):
+                    model = field.related_model
+                elif field.get_internal_type() in (
+                        'ForeignKey', 'OneToOneField', 'ManyToManyField'):
+                    model = field.rel.to
         yield field
+
+
+def is_values_queryset(qs):
+    if django.VERSION < (1, 9):
+        return isinstance(qs, django.db.models.query.ValuesQuerySet)
+    else:
+        return qs._iterable_class == django.db.models.query.ValuesIterable
 
 
 def read_frame(qs, fieldnames=(), index_col=None, coerce_float=False,
@@ -47,21 +67,41 @@ def read_frame(qs, fieldnames=(), index_col=None, coerce_float=False,
                 defined in the ``__unicode__`` or ``__str__``
                 methods of the related class definition
    """
+
     if fieldnames:
         if index_col is not None and index_col not in fieldnames:
             # Add it to the field names if not already there
             fieldnames = tuple(fieldnames) + (index_col,)
-
         fields = to_fields(qs, fieldnames)
-    elif isinstance(qs, django.db.models.query.ValuesQuerySet):
-        fieldnames = qs.field_names + qs.aggregate_names + qs.extra_names
-        fields = [qs.model._meta.get_field(f) for f in qs.field_names] + \
-                 [None] * (len(qs.aggregate_names) + len(qs.extra_names))
+    elif is_values_queryset(qs):
+        if django.VERSION < (1, 9):
+            if django.VERSION < (1, 8):
+                annotation_field_names = qs.aggregate_names
+            else:
+                annotation_field_names = list(qs.query.annotation_select)
+
+            fieldnames = qs.field_names + annotation_field_names + \
+                qs.extra_names
+            fields = [qs.model._meta.get_field(f) for f in qs.field_names] + \
+                [None] * (len(annotation_field_names) + len(qs.extra_names))
+
+        else:
+            annotation_field_names = list(qs.query.annotation_select)
+
+            select_field_names = list(qs.query.values_select)
+            extra_field_names = list(qs.query.extra_select)
+
+            fieldnames = select_field_names + annotation_field_names \
+                + extra_field_names
+
+            fields = [qs.model._meta.get_field(f) for
+                      f in select_field_names] + \
+                [None] * (len(annotation_field_names) + len(extra_field_names))
     else:
         fields = qs.model._meta.fields
         fieldnames = [f.name for f in fields]
 
-    if isinstance(qs, django.db.models.query.ValuesQuerySet):
+    if is_values_queryset(qs):
         recs = list(qs)
     else:
         recs = list(qs.values_list(*fieldnames))
